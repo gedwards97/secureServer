@@ -47,8 +47,9 @@ class sqlQuery:
         # Decryption is only carried out if the query has been encrypted
         if self.encrypted:
             for index in range(len(self.keywords)):
-                keyword_count = self.query.count(self.keywords[index])
-                encrypted_keyword_count = self.query.count(encrypted_keywords[index])
+                # Sum of the keywords and their associated encryptions in the query 
+                keyword_count = self.query.count(self.keywords[index] + " ") + self.query.count(" " + self.keywords[index]) - self.query.count(" " + self.keywords[index] + " ")
+                encrypted_keyword_count = self.query.count(encrypted_keywords[index] + " ") + self.query.count(" " + encrypted_keywords[index]) - self.query.count(" " + encrypted_keywords[index] + " ")
                 # Check whether each instance of a single keyword has the encryption key appended the end
                 if keyword_count == encrypted_keyword_count:
                     pass
@@ -58,21 +59,23 @@ class sqlQuery:
             # Remove keyword extension from 
             if no_malicious_keywords:
                 self.query = self.query.replace(str(self.encryption_key), "")
+                print(self.query)
             # Possible SQL Injection attack identified
             else:
-                print("Possible SQL Injection identified")
+                print("!!! Possible SQL Injection identified !!!".upper())
     
-    def add(self, string):
-        self.query = self.query + string
+    def user_input(self, user_inputs):
+        for user_input in user_inputs:
+            self.query = self.query.replace("''", "'%s'"%(user_input)) 
 
 # Testing the code works successfully below
- 
-test = sqlQuery("select * from union")
+query = "SELECT profile FROM userTable WHERE username = ''"
+test = sqlQuery(query)
 print(test.query)
 test.encrypt()
+print("Encrypted query \n", test.query)
+username = input("Enter username: ", )
+test.user_input([username])
 print(test.query)
-test.add(" select")
-print(test.query)
+print("Decrypted query:")
 test.decrypt()
-print(test.query)
-
