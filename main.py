@@ -3,6 +3,7 @@ import sqlite3
 import sys
 from functools import wraps
 from random import randint
+from sql_proxy import sqlProxy
 
 from flask import Flask,g,render_template,redirect,request,session,url_for
 
@@ -96,28 +97,52 @@ def login():
     if len(username)<1 and len(password)<1:
         return render_template('login.html', **context)
 
-    query = "SELECT userid FROM users WHERE username='%s'"%(username)
-    account = query_db(query)
-    user_exists = len(account)>0
-
-    query = "SELECT userid FROM users WHERE username='%s' AND password='%s'"%(username, password)
-    print(query)
-    account2 = query_db(query)
-    print(account)
-    pass_match = len(account2)>0
-
-    if user_exists:
-        if pass_match:
-            session['userid'] = account[0]['userid']
-            session['username'] = username
-            print(session)
-            return redirect(url_for('index'))
-        else:
-            # Return wrong password
-            return redirect(url_for('login_fail', error='Wrong password'))
+    query_test1 = "SELECT userid FROM users WHERE username = ''"
+    proxy_test1 = sqlProxy(query_test1)
+    proxy_test1.encrypt()
+    proxy_test1.user_input([username])
+    proxy_test1.decrypt()
+    
+    if proxy_test1.injection_threat:
+        return redirect(url_for('login_fail', error='SQL Injection threat detected'))
     else:
-        # Return no such user
-        return redirect(url_for('login_fail', error='No such user'))
+        account_test1 = query_db(proxy_test1.query)
+        user_exists = len(account_test1) > 0
+
+    # query = "SELECT userid FROM users WHERE username='%s'"%(username)
+    # account = query_db(query)
+    # user_exists = len(account)>0
+
+    query_test2 = "SELECT userid FROM users WHERE username = '' AND password = ''"
+    proxy_test2 = sqlProxy(query_test2)
+    proxy_test2.encrypt()
+    proxy_test2.user_input([username, password])
+    proxy_test2.decrypt()
+
+    if proxy_test2.injection_threat:
+        return redirect(url_for('login_fail', error='SQL Injection threat detected'))
+    else:
+        account_test2 = query_db(proxy_test2.query)
+        pass_match = len(account_test2)>0
+
+        # query = "SELECT userid FROM users WHERE username='%s' AND password='%s'"%(username, password)
+        # print(query)
+        # account2 = query_db(query)
+        # print(account)
+        # pass_match = len(account2)>0
+
+        if user_exists:
+            if pass_match:
+                session['userid'] = account_test2[0]['userid']
+                session['username'] = username
+                print(session)
+                return redirect(url_for('index'))
+            else:
+                # Return wrong password
+                return redirect(url_for('login_fail', error='Wrong password'))
+        else:
+            # Return no such user
+            return redirect(url_for('login_fail', error='No such user'))
 
 @app.route("/loginfail/")
 @std_context

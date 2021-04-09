@@ -1,11 +1,12 @@
 from random import randint
 
-class sqlQuery:
+class sqlProxy:
 
     def __init__(self, query):
         self.query = query
         self.encrypted = False
         self.encryption_key = None
+        self.injection_threat = False
         self.keywords = ['add', 'alter', 'all', 'and', 'any', 'as', 'asc', 'between',
                             'case', 'check', 'column', 'constraint', 'create', 'database', 
                             'default', 'delete', 'desc', 'distinct', 'drop', 'exec', 
@@ -35,7 +36,12 @@ class sqlQuery:
         if self.encrypted:
             self.encryption_key = keyword_extension
     
-    def decrypt(self):
+    def user_input(self, user_inputs):
+        for user_input in user_inputs:
+            # Replace first instace of '' with corresponding user input
+            self.query = self.query.replace(" ''", "'%s'"%(user_input), 1) 
+    
+    def injection_test(self):
         # Booleans which validate whether potentially malicious SQL injection has taken place  
         no_malicious_keywords = True 
         # Lists which will contain the encrypted versions of keywords
@@ -46,10 +52,11 @@ class sqlQuery:
 
         # Decryption is only carried out if the query has been encrypted
         if self.encrypted:
+            decrypted_query = self.query.replace(str(self.encryption_key), "")
             for index in range(len(self.keywords)):
-                # Sum of the keywords and their associated encryptions in the query 
-                keyword_count = self.query.count(self.keywords[index] + " ") + self.query.count(" " + self.keywords[index]) - self.query.count(" " + self.keywords[index] + " ")
-                encrypted_keyword_count = self.query.count(encrypted_keywords[index] + " ") + self.query.count(" " + encrypted_keywords[index]) - self.query.count(" " + encrypted_keywords[index] + " ")
+                # Sum of the keywords and their associated encryptions in the query (SIMPLIFY THIS WITH A FUNCTION MAYBE)
+                keyword_count = (decrypted_query.count(self.keywords[index] + " ") + decrypted_query.count(" " + self.keywords[index]) - decrypted_query.count(" " + self.keywords[index] + " ")) + (decrypted_query.count(" " + self.keywords[index].upper()) + decrypted_query.count(self.keywords[index].upper() + " ") - decrypted_query.count(" " + self.keywords[index].upper() + " "))
+                encrypted_keyword_count = (self.query.count(encrypted_keywords[index] + " ") + self.query.count(" " + encrypted_keywords[index]) - self.query.count(" " + encrypted_keywords[index] + " ")) + (self.query.count(encrypted_keywords[index].upper() + " ") + self.query.count(" " + encrypted_keywords[index].upper()) - self.query.count(" " + encrypted_keywords[index].upper() + " "))
                 # Check whether each instance of a single keyword has the encryption key appended the end
                 if keyword_count == encrypted_keyword_count:
                     pass
@@ -58,24 +65,19 @@ class sqlQuery:
             
             # Remove keyword extension from 
             if no_malicious_keywords:
-                self.query = self.query.replace(str(self.encryption_key), "")
-                print(self.query)
+                pass
             # Possible SQL Injection attack identified
             else:
-                print("!!! Possible SQL Injection identified !!!".upper())
+                self.injection_threat = True
     
-    def user_input(self, user_inputs):
-        for user_input in user_inputs:
-            self.query = self.query.replace("''", "'%s'"%(user_input)) 
+    def decrypt(self):
+        self.injection_test()
 
-# Testing the code works successfully below
-query = "SELECT profile FROM userTable WHERE username = ''"
-test = sqlQuery(query)
-print(test.query)
-test.encrypt()
-print("Encrypted query \n", test.query)
-username = input("Enter username: ", )
-test.user_input([username])
-print(test.query)
-print("Decrypted query:")
-test.decrypt()
+        if self.injection_threat:
+            pass
+        else:
+            self.query = self.query.replace(str(self.encryption_key), "")
+    
+
+
+
