@@ -52,11 +52,14 @@ class sqlProxy:
 
         # Decryption is only carried out if the query has been encrypted
         if self.encrypted:
+            # Lowercase encrypted and decrypted queries defined for injection analysis - accounts for varying text cases for of user inputs
             decrypted_query = self.query.replace(str(self.encryption_key), "")
+            decrypted_query = decrypted_query.lower()
+            encrypted_query = self.query.lower()
             for index in range(len(self.keywords)):
                 # Sum of the keywords and their associated encryptions in the query (SIMPLIFY THIS WITH A FUNCTION MAYBE)
-                keyword_count = (decrypted_query.count(self.keywords[index] + " ") + decrypted_query.count(" " + self.keywords[index]) - decrypted_query.count(" " + self.keywords[index] + " ")) + (decrypted_query.count(" " + self.keywords[index].upper()) + decrypted_query.count(self.keywords[index].upper() + " ") - decrypted_query.count(" " + self.keywords[index].upper() + " "))
-                encrypted_keyword_count = (self.query.count(encrypted_keywords[index] + " ") + self.query.count(" " + encrypted_keywords[index]) - self.query.count(" " + encrypted_keywords[index] + " ")) + (self.query.count(encrypted_keywords[index].upper() + " ") + self.query.count(" " + encrypted_keywords[index].upper()) - self.query.count(" " + encrypted_keywords[index].upper() + " "))
+                keyword_count = decrypted_query.count(self.keywords[index] + " ") + decrypted_query.count(" " + self.keywords[index]) - decrypted_query.count(" " + self.keywords[index] + " ")
+                encrypted_keyword_count = encrypted_query.count(encrypted_keywords[index] + " ") + encrypted_query.count(" " + encrypted_keywords[index]) - encrypted_query.count(" " + encrypted_keywords[index] + " ")
                 # Check whether each instance of a single keyword has the encryption key appended the end
                 if keyword_count == encrypted_keyword_count:
                     pass
@@ -78,6 +81,5 @@ class sqlProxy:
         else:
             self.query = self.query.replace(str(self.encryption_key), "")
     
-
 
 
