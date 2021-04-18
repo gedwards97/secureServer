@@ -15,6 +15,19 @@
         <form action="/search/" method="GET"><input type="text" name="s" /><input type="submit" value="Search" /></form>
     </nav>
 
+    <!-- Flash Message -->
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+
+                {% for message in messages %}
+                        {{ message }}
+                {% endfor %}
+
+            {% endif %}        
+        {% endwith %}
+    </div>
+
     {% block login %}
     {% if loggedin %}
     <div id="userbox">
@@ -31,5 +44,7 @@
 
     {% block content %}
     {% endblock %}
+
+    
 </body>
 </html>

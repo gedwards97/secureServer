@@ -1,5 +1,9 @@
 import random
 
+# Random alphanumeric string. Encryption and decryption can only be carried out if this key is passed through the funtion 
+encrypt_key = ''.join(random.choice('0123456789abcdefghijklmnopqrstuvwxysABCDEFGHIJKMNLOPQRSTUVWXYZ') for i in range(16))
+
+
 def token_encryption(token, key):
 
     # Dictionary which the encryption is based upon
@@ -20,24 +24,24 @@ def token_encryption(token, key):
         '5' : 305, '6' : 304, '7' : 303, '8' : 302, '9' : 301
     }
 
+    # Encrypted list breaks up encrypted elements, to allow for decryption
     encryted_list = []
+    # Final encrypted token which can is then stored in the SecureCookieSession object
     encryted_token= ""
 
-    if key == 123:
+    if key == encrypt_key:
         for char in token:
+            # Append a characters encrypted value onto the encrypted list
             encryted_list.append(encrypt_dict[char])
         
         for element in encryted_list:
+            # Concatenate the encrypted token
             encryted_token += str(element)
     
     return encryted_token, encryted_list
 
 
-def token_decryption(token, key):
-    # Defining variables from the token tuple (which was returned from the encryption function)
-    encrypted_token = [0]
-    encrypted_list = token[1]
-    decrypted_token = ""
+def token_decryption(token, key):    
 
     # Redefine dictionary which the encryption is based upon
     encrypt_dict = {
@@ -57,27 +61,38 @@ def token_decryption(token, key):
         '5' : 305, '6' : 304, '7' : 303, '8' : 302, '9' : 301
     }
 
-    if key == 123:
+    # Decryption is only attempted if the correct encryption key is passed, and the token's value is not None
+    # Token values (such as username) default as None on the server, when they are initiated as global variables
+    if key == encrypt_key and token != None:
+        # Defining encrypted list from the token tuple (returned from the encryption function)
+        encrypted_list = token[1]
+        decrypted_token = ""
+        # Matching encrypted value with it's corresponding key
         for encrypted_item in encrypted_list:
             for key in encrypt_dict:
                 if encrypted_item == encrypt_dict[key]:
+                    # Concatenating the decrypted token with the suitable key
                     decrypted_token += key
                 else: 
                     pass
+    else:
+        decrypted_token = None
     
     return decrypted_token
 
 
-token1 = random.randint(10,9999999)
-token1 = str(token1)
-token2 = ''.join(random.choice('0123456789abcdefghijklmnopqrstuvwxysABCDEFGHIJKMNLOPQRSTUVWXYZ') for i in range(random.randint(20, 25)))
-# token2 = "George123"
-print(token2)
+
+# token2 = ''.join(random.choice('0123456789abcdefghijklmnopqrstuvwxysABCDEFGHIJKMNLOPQRSTUVWXYZ') for i in range(random.randint(20, 25)))
+# # token2 = "George123"
+# print(token2)
 
 
-key = 123
-token2_encrypt = token_encryption(token2, key)
-print(token2_encrypt[0])
+# key = 123
+# token2_encrypt = token_encryption(token2, key)
+# print(token2_encrypt[0])
 
-token2_decrypt = token_decryption(token2_encrypt, key)
-print(token2_decrypt)
+# token2_decrypt = token_decryption(token2_encrypt, key)
+# print(token2_decrypt)
+
+# # Implement this onto server 
+# # Session timeout as well onto server
