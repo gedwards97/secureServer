@@ -6,21 +6,28 @@ from functools import wraps
 from random import randint,choice
 from sql_proxy import sqlProxy
 from flask import Flask,g,render_template,redirect,request,session,url_for,make_response,flash
-from session_encryption import token_encryption, token_decryption, encrypt_key
+# Own functions developed
+from dsc_cookie import DSC
+from encrypted_session import EncryptedSessionInterface
+
 
 # Web application initiation
 app = Flask(__name__)
 # Creating application's secret key
 # This is complex and random by design, in order to make it very difficult to guess -> if compromised, SecureCookieSession signatures are vulnerable
-app.secret_key = ''.join(choice('0123456789abcdefghijklmnopqrstuvwxysABCDEFGHIJKMNLOPQRSTUVWXYZ') for i in range(18))
+app.secret_key = ''.join(choice('0123456789abcdefghijklmnopqrstuvwxysABCDEFGHIJKMNLOPQRSTUVWXYZ') for i in range(10))
+app.session_interface = EncryptedSessionInterface()
 
 # Database initiatiom
 DATABASE = 'database.sqlite'
 
 # Global variables used throughout the server
 logged_in = False
-logged_out = False
 encrypt_user = None
+csrf_cookie_exits = False
+timedout = False
+dsc = DSC()
+dsc.init_app(app)
 
 def get_db():
     db = getattr(g, '_database', None)
@@ -47,12 +54,15 @@ def query_db(query, args=(), one=False):
 def std_context(f):
     @wraps(f)
     def wrapper(*args,**kwargs):
+        global dsc
         context={}
         request.context = context
         if 'userid' in session:
             context['loggedin'] = True
             # Server side decryption of current username which is stored in SecureCookieSession item encrypted  
-            context['username'] = token_decryption(encrypt_user, encrypt_key) # WAS -> session['username'] before 
+            context['username'] = session['username']
+            if dsc.dsc_decrypt(app) is not None:
+                context['dscvalue'] = dsc.dsc_decrypt(app).decode('utf-8')
         else:
             context['loggedin'] = False
 
@@ -84,8 +94,18 @@ def index():
     context = request.context # Defines context variable in basic from from std_context function
     # Adds posts and form_token keys, and corresponding values to the context variable
     context['posts'] = map(fix, posts)
-    context['form_token'] = token
-    print(context)
+    context['form_token'] = token    
+
+    ################################################# DSC CSRF TRIAL
+    global logged_in, csrf_cookie_exits, dsc
+    print("logged in ", logged_in)
+    if logged_in and not csrf_cookie_exits:
+        print("DSC COOKIE INIT...")
+        resp = dsc.dsc_cookie_init(app, 'index.html', context)
+        csrf_cookie_exits = True
+        return resp
+
+    #################################################
 
     # **context passes the context dictionary as keyword arguments
     # ie => **context = (userid=0, username=aking, posts=... etc)
@@ -106,7 +126,7 @@ def users_posts(uname=None):
     
     if proxy_query.injection_threat:
         # Database is not queried if an SQL injection threat is detected 
-        return redirect(url_for('user_sqlinjection'))
+        return redirect(url_for('forbidden', threat='SQL Injection threat detected'))
     else:
         # Database successfully queried
         cid = query_db(proxy_query.query)
@@ -132,13 +152,13 @@ def users_posts(uname=None):
 @std_context
 def login():
     # Selecting global varaibles used 
-    global logged_out, encrypt_user
+    global encrypt_user
 
     username = request.form.get('username','')
     password = request.form.get('password','')
     context = request.context
 
-    if len(username)<1 and len(password)<1:
+    if (len(username)<1 and len(password)<1):
         return render_template('login.html', **context)
 
     #  Username + password check query is defined, applied to the proxy and is encrypted
@@ -152,7 +172,7 @@ def login():
     proxy_query.decrypt()
 
     if proxy_query.injection_threat:
-        return redirect(url_for('user_sqlinjection'))
+        return redirect(url_for('forbidden', threat='SQL Injection threat detected'))
         # Database is not queried if an SQL injection threat is detected  ########################## <- DO I STILL NEED THIS?!?!?!
         # return redirect(url_for('login_fail', error='SQL Injection threat detected')) 
     else:
@@ -163,9 +183,8 @@ def login():
         # Login executed if an account with matching credentials is found
         if pass_match:
             session['userid'] = account[0]['userid']
-            encrypt_user = token_encryption(username, encrypt_key)
-            session['username'] = encrypt_user[0]
-            logged_out = False
+            session['username'] = username
+            session['exp-time'] = datetime.datetime.now() + datetime.timedelta(minutes=5)
             
             return redirect(url_for('index'))
         # Failed login protocol executed if username and password do not match those of an existing account
@@ -185,11 +204,15 @@ def login_fail():
 @app.route("/logout/")
 def logout():
     # Session credentials are removed as the user has logged out
-    global logged_out
+    global logged_in, csrf_cookie_exits
+    res = make_response(redirect(url_for("login")))
+    res.delete_cookie('dsc')
     session.pop('userid', None)
     session.pop('username', None)
-    logged_out = True
-    return redirect('/')
+    session.pop('exp-time', None)
+    csrf_cookie_exits = False
+    logged_in = False
+    return res
 
 # Access this route from clicking the 'post' link created in base html
 @app.route("/post/", methods=['GET', 'POST'])
@@ -197,16 +220,14 @@ def logout():
 def new_post():
     # Prevent client from post page if they do not have a valid active session 
     if 'userid' not in session:
-        return redirect(url_for('login'))
-
+        return redirect(url_for('logout'))
+    
     userid = session['userid']
     # Standard userid and username is retireved as context
     context = request.context
-    print("HERE G ", request.method)
-
-    # When post link is clicked, request.method == GET <- deafult of app route (THINK IT IS POST WHEN 'POST' BUTTON IS CLICKED)
-    if request.method=='GET':
+    if request.method == 'GET':
         return render_template('new_post.html', **context)
+        
 
     # Defining variables on the server side - TITLE and CONTENT retireved from post form
     date = datetime.datetime.now().timestamp()
@@ -226,8 +247,16 @@ def new_post():
     # If threat detected, query remains encrypted
     proxy_query.decrypt()
 
+    ###################################### CSRF TRIALS
+    form_csrf_value = request.form.get('dscval')
+    users_csrf_value = context["dscvalue"]
+
+    csrf_threat = form_csrf_value != users_csrf_value
+
     if proxy_query.injection_threat:
-        return redirect(url_for('user_sqlinjection'))
+        return redirect(url_for('forbidden', threat='SQL Injection threat detected'))
+    elif csrf_threat:
+        return redirect(url_for('forbidden', threat='CSRF threat detected'))
     else:
         query_db(proxy_query.query)
         get_db().commit()
@@ -257,7 +286,6 @@ def search_page():
     search = request.args.get('s', '')
     print("1" + search, file=sys.stderr)
 
-    #query = "SELECT posts.creator,posts.title,posts.content,users.username FROM posts JOIN users ON posts.creator=users.userid WHERE users.username LIKE '%%%s%%' ORDER BY date DESC LIMIT 10;"%(search)
     query = "SELECT username FROM users WHERE username LIKE '%%%s%%';"%(search)
     users = query_db(query)
     #for user in users:
@@ -279,43 +307,58 @@ def resetdb(token=None):
 
 
 # App route for SQL Injection threats detected within the application
-@app.route("/SQLejected")
-def user_sqlinjection():
+@app.route("/forbidden")
+@std_context
+def forbidden():
     # Users session is ended 
-    global logged_out
     session.pop('userid', None)
     session.pop('username', None)
-    logged_out = True
+    
+
+    context = request.context
+    context['threat'] = request.args.get('threat', 'Unknown threat')
     # 403 Forbidden returned
-    return 'Back off', 403
+    return render_template('403.html', **context)
 
 
+from dateutil import parser
 
 @app.before_request
-def session_timeout():
-    global logged_in, logged_out
-    session.modified = True
-    app.permanent_session_lifetime = timedelta(seconds=5)
-    if session.get('userid', None) is None and logged_in is True:
-        if logged_out is True:
-            logged_in = False
-            print("LOGGED OUT")
-        else:
-            logged_in = False
-            print("SESSION TIMEOUT")
+def session_timeout_check():
+    global logged_in, csrf_cookie_exits
+    if 'exp-time' in session:
+        present = datetime.datetime.now()
+        exp_time_str = session['exp-time']
+        # Converts exp-time from string to datetime object 
+        cookie_exp_time = parser.parse(exp_time_str)
+        # Session timeout protocol
+        if present > cookie_exp_time:
+            resp = make_response(redirect(url_for('login')))
+            resp.delete_cookie('dsc')
+            print("TIMED OUT")
+            session.pop('userid', None)
+            session.pop('username', None)
+            session.pop('exp-time', None)
             flash("! ! ! !  Your session timed out ! ! ! !")
-
-    elif session.get('userid', None) is not None and logged_in is True:
-        logged_in = True
-        print("STILL LOGGED IN")
-
-    elif session.get('userid', None) is None and logged_in is False:
-        logged_in = False
-        print("HAVEN'T LOGGED IN")
-    
-    else:
-        logged_in = True
-        print("LOGGED IN")        
+            csrf_cookie_exits = False
+            logged_in = False
+            return resp
+        else:
+            logged_in = True
+            session['exp-time'] = present + datetime.timedelta(minutes=5)
+        
 
 if __name__ == '__main__':
     app.run(debug=True)
+
+
+
+
+
+
+
+
+
+
+
+
